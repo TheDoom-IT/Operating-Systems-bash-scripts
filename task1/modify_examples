@@ -1,0 +1,245 @@
+#!/bin/sh
+
+name=`basename "$0"`
+test_dir="test_dir"
+
+prepare_test_directory() {
+	if [ -d "$test_dir" ]
+	then
+		clean
+	fi
+	mkdir "$test_dir"
+	cd "$test_dir"
+}
+
+clean() {
+	rm -r "$test_dir"
+}
+
+print_message() {
+	echo "$name: $*"
+}
+
+file() {
+	touch -- "$1"
+}
+
+dir() {
+	mkdir -- "$1"
+}
+
+describe() {
+	echo "Test case: $*"
+}
+
+tst() {
+	prepare_test_directory
+	test="Test: $*"
+	echo "$test"
+}
+
+end_tst() {
+	cd ..
+}
+
+run() {
+	./../modify $@
+}
+
+# function will check if given file exist 
+check() {
+	while [ $# -gt 0 ]
+	do
+		if [ ! -f "$1" ] && [ ! -d "$1" ]
+		then
+			echo "Test failed: $test. File "$1" does not exist";
+			cd ..
+#			clean
+			exit 1;
+		fi
+
+		shift
+	done
+}
+
+describe "renaming single file"
+
+tst "to upper"
+	file "filE1"
+	run -u "filE1"
+
+	check "FILE1"
+end_tst
+
+tst "to lower"
+	file "FiLe2"
+	run -l "FiLe2"
+
+	check "file2"
+end_tst
+
+tst "with sed pattern"
+	file "FileName27"
+	run "s/leN/tEsT1/" "FileName27" 
+
+	check "FitEsT1ame27" 
+end_tst
+
+describe "renaming single directory"
+
+tst "to upper"
+	dir "filE1"
+	run -u "filE1"
+
+	check "FILE1"
+end_tst
+
+tst "to lower"
+	dir "FiLe2"
+	run -l "FiLe2"
+
+	check "file2"
+end_tst
+
+tst "with sed pattern"
+	dir "FileName27"
+	run "s/leN/tEsT1/" "FileName27" 
+
+	check "FitEsT1ame27" 
+end_tst
+
+
+
+describe "recursive" 
+
+tst "one file inside directory"
+	dir "Dir1"
+	file "Dir1/File1"
+	
+	run -u -r Dir1	
+
+	check DIR1
+	check DIR1/FILE1
+end_tst
+
+tst "multiple files and directiories inside dir"
+	dir Dir1; dir Dir2
+	file FILE1; file FILE2
+	dir Dir1/DIR11; dir Dir2/dir21
+	file Dir1/file11; file Dir2/File21
+	file Dir1/DIR11/FIle111
+
+	run -l -r Dir1 Dir2 FILE1 FILE2
+
+	check dir1 dir2 file1 file2 dir1/dir11 dir2/dir21 dir1/file11 dir2/file21 dir1/dir11/file111 
+end_tst
+
+
+describe "tricky cases"
+
+tst "file starting with -"
+	file "-file1"
+	dir "-dir1"
+
+	run -u -file1 -dir1
+
+	check -FILE1 -DIR1
+end_tst
+
+tst "file called '*'"
+	file '*'
+	
+	run -l -r '*'
+
+	check '*'
+end_tst
+
+tst "dir called '*'"
+	dir '*'
+	file '*'/file1
+	file '*'/'*'
+	# this files shouldnt be changed
+	file file1	
+
+	./../modify -u -r '*'
+
+	check '*' '*'/FILE1 '*'/'*' file1
+end_tst
+
+tst "files with '?'"
+	file 'file?file'
+	dir 'DIR?dir'
+	file 'DIR?dir/FIle'
+
+	# this file shouldn't be changed
+	file file1file
+
+	./../modify -u -r 'file?file' 'DIR?dir'
+check FILE?FILE DIR?DIR DIR?DIR/FILE file1file
+end_tst
+
+tst "files with space"
+	file 'file file1'
+
+	# these files shouldn't be modified
+	file 'file'
+	dir 'file1'
+
+	./../modify -u 'file file1'
+
+	check 'FILE FILE1' file file1
+
+end_tst
+
+tst "resursive files with spaces"
+	file 'file1 file2'
+	dir 'dir1 dir2'
+	file 'dir1 dir2/file1 file2'
+
+	# shouldnt be modified
+	file file1; file file2
+	dir dir1; dir dir2;	
+
+	./../modify -u -r 'file1 file2' 'dir1 dir2'
+
+	check 'FILE1 FILE2' 'DIR1 DIR2' 'DIR1 DIR2/FILE1 FILE2'
+	check file1 file2 dir1 dir2 
+end_tst
+
+tst "one file with long path"
+	dir dir1
+	file dir1/file1
+
+	run -u -r dir1/file1
+
+	check dir1 dir1/FILE1
+end_tst
+
+tst "recursion with long path"
+	dir DIR1
+	dir DIR1/DIR2
+	file DIR1/DIR2/FILE1
+
+	run -l -r DIR1/DIR2
+
+	check DIR1 DIR1/dir2 DIR1/dir2/file1
+end_tst
+
+tst "modification of script file"
+	run -u ./../modify
+
+	check ./../modify
+end_tst
+
+tst "long strange path"
+	dir dir1
+	dir dir1/dir2
+	file dir1/dir2/file1
+
+	run -u dir1/dir2/../dir2/file1
+
+	check dir1 dir1/dir2 dir1/dir2/FILE1	
+end_tst
+
+echo "All tests passed"
+clean

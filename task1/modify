@@ -1,0 +1,165 @@
+#!/bin/sh
+
+# should support combined flags like -rl, -lr, etc.
+# flags may be placed after the file names "modify file1 file2 -rl" 
+
+# return absolute path of the file
+get_abs_filename() {
+  filename="$1"
+  parentdir=$(dirname -- "$filename")
+
+  if [ -d "$filename" ]; then
+      echo "$(cd -- "$filename" && pwd)"
+  elif [ -d "$parentdir" ]; then
+    echo "$(cd -- "$parentdir" && pwd)/$(basename -- "$filename")"
+  fi
+}
+
+# the name of the script without a path
+name=`basename "$0"`
+full_path=`get_abs_filename "$0"`
+
+# function for printing help information
+print_help() {
+cat<<EOT 1>&2
+Usage: $name [-r] [-l|-u] <dir/file names...>
+   or: $name [-r] <sed pattern> <dir/file names...>
+   or: $name [-h]
+
+Arguments:
+  -l			lowerize given filenames 
+  -u			uppercase given filenames	
+  -r			change filenames recursively
+  -h			print this help
+EOT
+}
+
+# functions informing about the usage of wrong combination of arguments
+print_used_both_l_h() {
+cat<<EOT 1>&2
+$name: You cannot use both -l and -u flags. Use only one of them.
+EOT
+}
+
+# check if the script was run on itself
+check_if_modify_itself() {
+	if [ "x`get_abs_filename "$1"`" = "x$full_path" ]
+	then
+cat<<EOT 1>&2
+$name: Script cannot modify itself.
+EOT
+exit 1;
+	fi
+}
+
+# close program if previous command failed
+check_if_suceeded() {
+	if [ ! $? -eq 0 ]
+	then
+cat<<EOT 1>&2
+$name: Error occured
+EOT
+		exit 1
+	fi
+}
+
+# function modifying whole directory
+modify_directory() {
+	for f in "$1"/*
+	do
+		modify_file "$f" 
+	done
+}
+
+# main function modifying files
+modify_file() {
+	check_if_modify_itself "$1"
+
+	if [ "$recursive" = y ] && [ -d "$1" ]
+	then
+		modify_directory "$1"
+	fi
+	
+	file_path=`dirname -- "$1"`
+	file_name=`basename -- "$1"`
+
+	new_name=`echo "$file_name" | sed "$pattern"`
+	check_if_suceeded	
+
+	if [ "$new_name" != "$file_name" ]
+	then
+		mv -- "$1" "$file_path/$new_name" 
+	fi
+	
+	check_if_suceeded
+}
+
+# print help if no parameters provided
+if [ $# -eq 0 ] 
+then
+	print_help
+	exit
+fi
+
+#prepare variables
+# flags for parameters
+recursive=n;lower=n;upper=n;
+# variable for sed pattern
+pattern="";
+
+# manage parameters 
+while [ $# -gt 0 ]
+do
+	case $1 in
+		"-h") print_help; exit;;
+		"-r") recursive=y; shift;;
+		"-l") 
+			if [ "$upper" = y ]
+			then
+				print_used_both_l_h; exit 1
+			fi
+			lower=y
+			shift;;
+		"-u") 
+			if [ "$lower" = y ]
+			then
+				print_used_both_l_h; exit 1
+			fi
+			upper=y
+			shift;;
+		*) 
+			if [ "$upper" = n ] && [ "$lower" = n ]
+			then
+				pattern="$1"
+				shift
+			fi
+			break;;
+	esac
+done
+
+# set pattern
+if [ -z "$pattern" ]
+then
+	# check -l and -u
+	if [ "$upper" = y ]
+	then
+		pattern="s/[a-z]/\U&/g";
+	elif [ "$lower" = y ]
+	then
+		pattern="s/[A-Z]/\L&/g";
+	fi
+fi
+
+# check if there are some files on the input
+if [ $# -eq 0 ]
+then
+	echo "$name: missing file operand"; exit 1
+fi
+
+# manage files
+while [ $# -gt 0 ]
+do
+	filename=`get_abs_filename "$1"`
+	modify_file "$filename"
+	shift
+done
